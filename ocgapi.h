@@ -44,6 +44,22 @@ OCGAPI void* OCG_DuelQuery(OCG_Duel ocg_duel, uint32_t* length, const OCG_QueryI
 OCGAPI void* OCG_DuelQueryLocation(OCG_Duel ocg_duel, uint32_t* length, const OCG_QueryInfo* info_ptr);
 OCGAPI void* OCG_DuelQueryField(OCG_Duel ocg_duel, uint32_t* length);
 
+/* Private host reconciliation ABI. IDs are uint32, unique only within a duel,
+ * and align with OCG_DuelQueryLocation's slot order (zero for empty slots).
+ * No card/object pointer is returned. This does not change the core API version.
+ */
+#define OCG_RONDO_CARD_IDENTITY_ABI_VERSION 1u
+typedef enum OCG_RondoCardIdentityStatus {
+	OCG_RONDO_CARD_IDENTITY_OK = 0,
+	OCG_RONDO_CARD_IDENTITY_INVALID_ARGUMENT = 1,
+	OCG_RONDO_CARD_IDENTITY_INVALID_DUEL = 2,
+	OCG_RONDO_CARD_IDENTITY_INSUFFICIENT_CAPACITY = 3
+} OCG_RondoCardIdentityStatus;
+OCGAPI uint32_t OCG_RondoCardIdentityABIVersion(void);
+OCGAPI int OCG_RondoDuelQueryCardIDs(OCG_Duel ocg_duel, uint32_t abi_version,
+	uint8_t controller, uint32_t location, uint32_t* out_ids,
+	uint32_t capacity, uint32_t* out_count);
+
 #undef OCGAPI
 #undef EXTERN_C
 

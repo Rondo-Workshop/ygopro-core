@@ -6,12 +6,19 @@
  */
 #include <cstring> //std::memcpy
 #include <new> //std::nothrow
+#include <mutex>
+#include <unordered_set>
 #include <vector>
 #include "ocgapi.h"
 #include "interpreter.h"
 #include "duel.h"
 #include "field.h"
 #include "effect.h"
+
+namespace {
+std::mutex rondo_duel_mutex;
+std::unordered_set<duel*> rondo_active_duels;
+}
 
 void OCG_GetVersion(int* major, int* minor) {
 	if(major)
@@ -51,12 +58,60 @@ int OCG_CreateDuel(OCG_Duel* out_ocg_duel, const OCG_DuelOptions* options_ptr) {
 		return OCG_DUEL_CREATION_INCOMPATIBLE_LUA_API;
 	}
 	*out_ocg_duel = static_cast<OCG_Duel>(duelPtr);
+	{
+		std::lock_guard<std::mutex> lock(rondo_duel_mutex);
+		rondo_active_duels.insert(duelPtr);
+	}
 	return OCG_DUEL_CREATION_SUCCESS;
 }
 
 void OCG_DestroyDuel(OCG_Duel ocg_duel) {
-	if(ocg_duel)
+	if(ocg_duel) {
+		{
+			std::lock_guard<std::mutex> lock(rondo_duel_mutex);
+			if(rondo_active_duels.erase(static_cast<duel*>(ocg_duel)) == 0)
+				return;
+		}
 		delete static_cast<duel*>(ocg_duel);
+	}
+}
+
+uint32_t OCG_RondoCardIdentityABIVersion(void) {
+	return OCG_RONDO_CARD_IDENTITY_ABI_VERSION;
+}
+
+int OCG_RondoDuelQueryCardIDs(OCG_Duel ocg_duel, uint32_t abi_version,
+	uint8_t controller, uint32_t location, uint32_t* out_ids,
+	uint32_t capacity, uint32_t* out_count) {
+	if(abi_version != OCG_RONDO_CARD_IDENTITY_ABI_VERSION || controller > 1 ||
+		out_ids == nullptr || out_count == nullptr ||
+		(location != LOCATION_DECK && location != LOCATION_HAND &&
+		 location != LOCATION_MZONE && location != LOCATION_SZONE &&
+		 location != LOCATION_GRAVE && location != LOCATION_REMOVED &&
+		 location != LOCATION_EXTRA))
+		return OCG_RONDO_CARD_IDENTITY_INVALID_ARGUMENT;
+	*out_count = 0;
+	std::lock_guard<std::mutex> lock(rondo_duel_mutex);
+	auto* pduel = static_cast<duel*>(ocg_duel);
+	if(rondo_active_duels.find(pduel) == rondo_active_duels.end())
+		return OCG_RONDO_CARD_IDENTITY_INVALID_DUEL;
+	const auto& player = pduel->game_field->player[controller];
+	const card_vector* list = nullptr;
+	switch(location) {
+	case LOCATION_DECK: list = &player.list_main; break;
+	case LOCATION_HAND: list = &player.list_hand; break;
+	case LOCATION_MZONE: list = &player.list_mzone; break;
+	case LOCATION_SZONE: list = &player.list_szone; break;
+	case LOCATION_GRAVE: list = &player.list_grave; break;
+	case LOCATION_REMOVED: list = &player.list_remove; break;
+	case LOCATION_EXTRA: list = &player.list_extra; break;
+	}
+	if(capacity < list->size())
+		return OCG_RONDO_CARD_IDENTITY_INSUFFICIENT_CAPACITY;
+	for(size_t i = 0; i < list->size(); ++i)
+		out_ids[i] = (*list)[i] ? (*list)[i]->cardid : 0;
+	*out_count = static_cast<uint32_t>(list->size());
+	return OCG_RONDO_CARD_IDENTITY_OK;
 }
 
 void OCG_DuelNewCard(OCG_Duel ocg_duel, const OCG_NewCardInfo* info_ptr) {
