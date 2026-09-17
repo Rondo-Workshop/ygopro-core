@@ -272,6 +272,8 @@ LUA_FUNCTION(SetOwnerPlayer) {
 	auto p = lua_get<uint8_t>(L, 2);
 	if(p != 0 && p != 1)
 		return 0;
+	if(self->effect_owner != p)
+		++self->rondo_owner_player_script_revision;
 	self->effect_owner = p;
 	return 0;
 }

@@ -46,6 +46,9 @@ public:
 	uint32_t hint_timing[2]{};
 	uint32_t card_type{};
 	uint32_t active_type{};
+	// Private v3 projection evidence: distinguish Lua's SetOwnerPlayer from
+	// the native resolver's ordinary triggering-player stamp.
+	uint64_t rondo_owner_player_script_revision{};
 	int32_t label_object{};
 	int32_t condition{};
 	int32_t cost{};
