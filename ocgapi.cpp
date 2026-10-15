@@ -96,15 +96,19 @@ void rondo_release_baseline(duel* pduel) {
 bool rondo_baseline_effect_changed(duel* pduel, const rondo_duel_baseline& baseline) {
 	auto* L = pduel->lua->lua_state;
 	for(const auto& entry : baseline.effects) {
-		auto* e = entry.first;
-		if(pduel->effects.count(e) == 0)
-			continue; // A destroyed effect no longer contributes future authority.
-		lua_rawgeti(L, LUA_REGISTRYINDEX, e->ref_handle);
+		// Identity comes from the baseline pin, never from the address: a later
+		// allocation may reuse a destroyed baseline effect's address, and whether
+		// it does depends on the process heap. Deletion swaps the pinned userdata
+		// for the DELETED sentinel; effects registered after the baseline are
+		// reported by the v2 initial_id scan.
 		lua_rawgeti(L, LUA_REGISTRYINDEX, entry.second.effect_pin);
-		const bool same_effect = lua_rawequal(L, -1, -2) != 0;
-		lua_pop(L, 2);
-		if(!same_effect)
-			return true; // A newly allocated effect reused a baseline address.
+		auto* pinned = lua_isuserdata(L, -1) ? *static_cast<lua_obj**>(lua_touserdata(L, -1)) : nullptr;
+		lua_pop(L, 1);
+		if(pinned && pinned->lua_type == LuaParam::DELETED)
+			continue; // A destroyed effect no longer contributes future authority.
+		auto* e = entry.first;
+		if(pinned != e || pduel->effects.count(e) == 0)
+			return true; // Inconsistent pin: fail closed.
 		if(rondo_effect_fields(pduel, e) != entry.second.fields || e->label != entry.second.label)
 			return true;
 		if(e->label_object != 0) {
